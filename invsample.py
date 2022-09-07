@@ -128,10 +128,13 @@ def sample_family(prob_fn, N_dists, args, x_min=0, x_max=1, N=1, seed=None,
         List of additional arguments to feed to prob_fn. Each element in list
         should represent a PDF parameter, and should be a 1D numpy array length
         N_dists, giving sequence of values for the parameter in question.
-    x_min : float, optional
-        The minimum of the range of p(x). The default is 0.
-    x_max : float, optional
-        The maximum of the range of p(x). The default is 1.
+    x_min : float or array, optional
+        The minimum/minima of the range of p(x). If an array, it should be of
+        length N_dists, giving a different minimum for each PDF. If a float,
+        then the same minimum is used for all PDFs. The default is 0.
+    x_max : float or array, optional
+        The maximum/maxima of the range of p(x) (see x_min above). The default
+        is 1.
     N : int, optional
         Number of samples to draw *per PDF*. The default is 1.
     seed : int, numpy.random.Generator, or None; optional
@@ -164,16 +167,21 @@ def sample_family(prob_fn, N_dists, args, x_min=0, x_max=1, N=1, seed=None,
         assert arg.shape == (N_dists,), "Argument has wrong shape!"
         args_unsqueezed.append(arg[:, None])
 
+    # if x_min/max are floats, then convert to uniform arrays
+    if not hasattr(x_min, "__len__"):
+        x_min = x_min * np.ones(N_dists)
+        x_max = x_max * np.ones(N_dists)
+
     # set up coordinate array, evaluate PDF and integrate for CDF
-    q = np.linspace(x_min, x_max, N_pts)
-    p = prob_fn(q[None], *args_unsqueezed)
+    q = np.linspace(x_min, x_max, N_pts).T
+    p = prob_fn(q, *args_unsqueezed)
     F = ctrapz(p, q, initial=0)
 
     # convergence test: check integral the same with N_pts/2
     if test_convergence:
         N_test = N_pts // 2
-        q_test = np.linspace(x_min, x_max, N_test)
-        p_test = prob_fn(q_test[None], *args_unsqueezed)
+        q_test = np.linspace(x_min, x_max, N_test).T
+        p_test = prob_fn(q_test, *args_unsqueezed)
         F_test = ctrapz(p_test, q_test, initial=0)
         np.testing.assert_allclose(
             F_test[:, -1], F[:, -1], rtol=1e-6, err_msg='Try increasing N_pts.'
@@ -202,8 +210,8 @@ def sample_family(prob_fn, N_dists, args, x_min=0, x_max=1, N=1, seed=None,
     a = np.tile(np.arange(N_dists)[:, None], reps=(1, N))
     F0 = F[a, i0]
     F1 = F[a, i1]
-    q0 = q[i0]
-    q1 = q[i1]
+    q0 = q[a, i0]
+    q1 = q[a, i1]
     samples = (q0 * (F1 - u) + q1 * (u - F0)) / (F1 - F0)
 
     # if only one sample per PDF requested, return 1D array not 2D.
